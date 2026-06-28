@@ -1,0 +1,70 @@
+{
+  "name": "sqlite-reader",
+  "version": "0.1.0",
+  "description": "Read-only SQLite3 binary parser — extract rows from a table given a raw file buffer",
+  "keywords": [
+    "sqlite",
+    "sqlite3",
+    "parser",
+    "binary",
+    "reader",
+    "database"
+  ],
+  "homepage": "https://github.com/baxyz/sqlite-reader#readme",
+  "bugs": {
+    "url": "https://github.com/baxyz/sqlite-reader/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/baxyz/sqlite-reader.git"
+  },
+  "license": "LGPL-3.0-or-later",
+  "author": "baxyz <berenger@arnaud.work>",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/sqlite-reader.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/sqlite-reader.cjs"
+      }
+    }
+  },
+  "main": "./dist/sqlite-reader.cjs",
+  "module": "./dist/sqlite-reader.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "vite build && tsc --project tsconfig.build.json --declaration --emitDeclarationOnly && tsx scripts/pack.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src test",
+    "format": "oxfmt src test",
+    "format:check": "oxfmt --check src test",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "prepublishOnly": "pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/ui": "^4.1.5",
+    "oxfmt": "^0.48.0",
+    "oxlint": "^1.63.0",
+    "tsx": "^4.22.4",
+    "typescript": "7.0.1-rc",
+    "vite": "^8.0.11",
+    "vitest": "^4.1.5"
+  },
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=18"
+  }
+}
