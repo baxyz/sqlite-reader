@@ -6,14 +6,21 @@ import { readFileSync, unlinkSync } from "node:fs";
 import { readTable } from "../src/index";
 
 function makeDb(setup: (db: DatabaseSync) => void): Uint8Array {
-  const path = join(tmpdir(), `sqlite-test-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`);
+  const path = join(
+    tmpdir(),
+    `sqlite-test-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`,
+  );
   const db = new DatabaseSync(path);
   try {
     setup(db);
     db.close();
     return new Uint8Array(readFileSync(path));
   } finally {
-    try { unlinkSync(path); } catch { /* ignore */ }
+    try {
+      unlinkSync(path);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -104,15 +111,18 @@ describe("readTable", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       n1: -1,
-      p2: 300, n2: -300,
-      p3: 40000, n3: -40000,
-      p4: 9000000, n4: -9000000,
+      p2: 300,
+      n2: -300,
+      p3: 40000,
+      n3: -40000,
+      p4: 9000000,
+      n4: -9000000,
       big6: null,
       big8: null,
-      flt:  null,
-      blb:  null,
+      flt: null,
+      blb: null,
       zero: 0,
-      one:  1,
+      one: 1,
     });
   });
 

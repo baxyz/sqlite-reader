@@ -45,32 +45,41 @@ function decodeRecord(payload: Uint8Array): SqliteValue[] {
       const v = payload[pos++];
       values.push(v >= 0x80 ? v - 0x100 : v);
     } else if (t === 2) {
-      const v = u16(payload, pos); pos += 2;
+      const v = u16(payload, pos);
+      pos += 2;
       values.push(v >= 0x8000 ? v - 0x10000 : v);
     } else if (t === 3) {
-      const v = (payload[pos] << 16) | (payload[pos + 1] << 8) | payload[pos + 2]; pos += 3;
+      const v = (payload[pos] << 16) | (payload[pos + 1] << 8) | payload[pos + 2];
+      pos += 3;
       values.push(v >= 0x800000 ? v - 0x1000000 : v);
     } else if (t === 4) {
-      const v = u32(payload, pos); pos += 4;
+      const v = u32(payload, pos);
+      pos += 4;
       values.push(v >= 0x80000000 ? v - 0x100000000 : v);
     } else if (t === 5) {
-      pos += 6; values.push(null);
+      pos += 6;
+      values.push(null);
     } else if (t === 6) {
-      pos += 8; values.push(null);
+      pos += 8;
+      values.push(null);
     } else if (t === 7) {
-      pos += 8; values.push(null);
+      pos += 8;
+      values.push(null);
     } else if (t === 8) {
       values.push(0);
     } else if (t === 9) {
       values.push(1);
     } else if (t >= 12 && t % 2 === 0) {
-      pos += (t - 12) / 2; values.push(null); // blob — not supported
+      pos += (t - 12) / 2;
+      values.push(null); // blob — not supported
     } else if (t >= 13 && t % 2 === 1) {
       const len = (t - 13) / 2;
       values.push(dec.decode(payload.subarray(pos, pos + len)));
       pos += len;
-    /* c8 ignore start */
-    } else { values.push(null); } // serial types 10/11 reserved — never emitted by SQLite
+      /* c8 ignore start */
+    } else {
+      values.push(null);
+    } // serial types 10/11 reserved — never emitted by SQLite
     /* c8 ignore stop */
   }
 
@@ -101,8 +110,10 @@ function traverseTable(db: Uint8Array, pageNum: number, pageSize: number): Sqlit
     const ptrBase = base + hdr + 8;
     for (let i = 0; i < numCells; i++) {
       let pos = base + u16(db, ptrBase + i * 2);
-      const [payloadLen, ps] = varint(db, pos); pos += ps;
-      const [, rs] = varint(db, pos); pos += rs; // skip rowid
+      const [payloadLen, ps] = varint(db, pos);
+      pos += ps;
+      const [, rs] = varint(db, pos);
+      pos += rs; // skip rowid
       rows.push(decodeRecord(db.subarray(pos, pos + payloadLen)));
     }
   }
