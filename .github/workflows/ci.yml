@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: lts/*
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  test:
+    name: Test (100% coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Verify dist/package.json
+        run: |
+          node -e "
+          import { readFileSync, existsSync } from 'node:fs'
+
+          const pkg = JSON.parse(readFileSync('dist/package.json', 'utf8'))
+
+          const forbidden = ['devDependencies', 'scripts', 'packageManager', 'files', 'publishConfig']
+          for (const field of forbidden) {
+            if (field in pkg) throw new Error(\`dist/package.json must not contain '\${field}'\`)
+          }
+
+          const paths = JSON.stringify(pkg.exports) + pkg.main + pkg.module + pkg.types
+          if (paths.includes('./dist/')) throw new Error('dist/package.json still has ./dist/ prefix in paths')
+
+          if (!existsSync('dist/LICENSE')) throw new Error('dist/LICENSE is missing')
+
+          console.log('dist/package.json OK — no forbidden fields, paths clean, assets present')
+          " --input-type=module
+
+  pr-summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: [lint, format, typecheck, test, build]
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post or update PR comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const results = {
+              lint:      '${{ needs.lint.result }}',
+              format:    '${{ needs.format.result }}',
+              typecheck: '${{ needs.typecheck.result }}',
+              test:      '${{ needs.test.result }}',
+              build:     '${{ needs.build.result }}',
+            }
+            const icon = (r) => r === 'success' ? '✅' : r === 'failure' ? '❌' : r === 'skipped' ? '⏭️' : '⚠️'
+            const rows = Object.entries(results)
+              .map(([name, result]) => `| ${name} | ${icon(result)} ${result} |`)
+              .join('\n')
+            const allGood = Object.values(results).every((r) => r === 'success')
+            const body = [
+              '<!-- ci-summary -->',
+              `## CI ${allGood ? '✅ All passing' : '❌ Some checks failed'}`,
+              '',
+              '| Check | Status |',
+              '|-------|--------|',
+              rows,
+              '',
+              `_Updated: ${new Date().toUTCString()} — commit \`${{ github.sha }}\`_`,
+            ].join('\n')
+            const marker = '<!-- ci-summary -->'
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const existing = comments.find((c) => c.body.includes(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              })
+            }
