@@ -1,6 +1,6 @@
 {
   "name": "sqlite-reader",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Read-only SQLite3 binary parser — extract rows from a table given a raw file buffer",
   "keywords": [
     "sqlite",
