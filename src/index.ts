@@ -86,7 +86,19 @@ function decodeRecord(payload: Uint8Array): SqliteValue[] {
   return values;
 }
 
-function traverseTable(db: Uint8Array, pageNum: number, pageSize: number): SqliteValue[][] {
+function traverseTable(
+  db: Uint8Array,
+  pageNum: number,
+  pageSize: number,
+  visited: Set<number> = new Set(),
+): SqliteValue[][] {
+  // A well-formed B-tree never revisits a page — this only trips on a
+  // corrupted/malicious child pointer, which would otherwise recurse until
+  // the stack overflows. Every page belongs to exactly one traversal, so
+  // this can never false-positive on a legitimate file.
+  if (visited.has(pageNum)) return [];
+  visited.add(pageNum);
+
   const base = (pageNum - 1) * pageSize;
   const hdr = pageNum === 1 ? 100 : 0; // page 1 has 100-byte db header before the btree header
 
@@ -100,9 +112,9 @@ function traverseTable(db: Uint8Array, pageNum: number, pageSize: number): Sqlit
     const ptrBase = base + hdr + 12;
     for (let i = 0; i < numCells; i++) {
       const cellPos = base + u16(db, ptrBase + i * 2);
-      rows.push(...traverseTable(db, u32(db, cellPos), pageSize));
+      rows.push(...traverseTable(db, u32(db, cellPos), pageSize, visited));
     }
-    rows.push(...traverseTable(db, rightmost, pageSize));
+    rows.push(...traverseTable(db, rightmost, pageSize, visited));
   }
 
   if (pageType === 13) {

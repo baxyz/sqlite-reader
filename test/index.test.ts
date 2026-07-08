@@ -167,6 +167,33 @@ describe("readTable", () => {
     expect(rows[99]).toMatchObject({ val: "Row 100" });
   });
 
+  it("stops instead of recursing forever when an interior page's child pointer cycles back", () => {
+    const data = makeDb((db) => {
+      db.exec("PRAGMA page_size=512");
+      db.exec("CREATE TABLE Big (id INTEGER PRIMARY KEY, val TEXT)");
+      for (let i = 1; i <= 100; i++) {
+        db.exec(`INSERT INTO Big VALUES (${i}, 'Row ${String(i).padStart(3, "0")}')`);
+      }
+    });
+
+    const pageSize = 512;
+    const totalPages = data.length / pageSize;
+    let interiorPageNum: number | null = null;
+    for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+      if (data[(pageNum - 1) * pageSize] === 5) {
+        interiorPageNum = pageNum;
+        break;
+      }
+    }
+    expect(interiorPageNum).not.toBeNull();
+
+    // Corrupt: point the interior page's rightmost-child pointer back at itself.
+    const base = (interiorPageNum! - 1) * pageSize;
+    new DataView(data.buffer, data.byteOffset + base + 8, 4).setUint32(0, interiorPageNum!, false);
+
+    expect(() => readTable(data, "Big")).not.toThrow();
+  });
+
   it("returns rows without column names when schema uses bracket-quoted identifiers", () => {
     const data = makeDb((db) => {
       db.exec("CREATE TABLE Bracketed ([id] INTEGER PRIMARY KEY, [val] TEXT)");
