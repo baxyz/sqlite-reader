@@ -13,6 +13,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `decodeRecord` now decodes 48-bit integers (serial type 5), 64-bit integers
   (serial type 6), and 64-bit floats (serial type 7) instead of returning
   `null` for those columns.
+- `readTable` accepts an optional `onSkippedRow` callback, called with a
+  `CorruptedRecordError` for each row excluded due to corruption. Without it,
+  a corrupted row is indistinguishable from the table simply having fewer
+  rows; the exported `CorruptedRecordError` class lets callers detect or log
+  that data was dropped.
+- `readTable` now validates its `db` argument: a `TypeError` if it isn't a
+  `Uint8Array`, or an `Error` if it's shorter than the 100-byte SQLite file
+  header, instead of an undefined-driven failure somewhere deep in the parser.
 
 ### Changed
 
@@ -20,6 +28,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `decodeRecord` computes each column's byte size once (via `serialTypeSize`)
   instead of maintaining that fact in two places — the bounds check and the
   per-branch `pos` advancement can no longer drift out of sync.
+- Comment stripping and column splitting share one `skipQuoted` helper for
+  scanning quoted regions, instead of each hand-rolling its own copy of the
+  same state machine.
+- The per-row catch added below now only swallows `CorruptedRecordError`;
+  any other error (a real bug, not recognized corruption) propagates instead
+  of being silently absorbed as "just another bad row."
 
 ### Fixed
 
@@ -38,11 +52,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   statement contains a comment with an unbalanced paren or comma. Comments
   are stripped with a linear scan rather than a regex, avoiding a
   CodeQL-flagged ReDoS on adversarial input.
-- Comment stripping and column splitting both now track single-quoted string
-  literals, so a `DEFAULT` value containing `--`, `/*`, `,`, or `(` no longer
+- Comment stripping and column splitting now track all four SQL quoting
+  styles (`'...'`, `"..."`, `` `...` ``, `[...]`), not just `'...'`, so a
+  `DEFAULT` value containing `--`, `/*`, `,`, or `(` in any of them no longer
   corrupts or empties the parsed column list. Removing a `/* */` comment also
   now leaves a space behind, so an identifier directly adjacent to it (no
   whitespace) no longer merges with the next token.
+- An unterminated quote in the stored `CREATE TABLE` SQL (only reachable via
+  a corrupted/malicious `sqlite_master` row) now throws instead of getting
+  the parser stuck "inside" the string for the rest of the scan, which
+  previously swallowed every column after the stray quote.
 
 ## [0.2.1] - 2026-07-08
 
