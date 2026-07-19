@@ -191,6 +191,22 @@ describe("readTable", () => {
     expect(rows[0]).toMatchObject({ val: "hello" });
   });
 
+  it("parses column names when schema has a /* block comment */ with an unbalanced paren/comma", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE BlockCommented (
+          /* unbalanced paren) in a comment, before the real columns */
+          id  INTEGER PRIMARY KEY,
+          val TEXT
+        );
+        INSERT INTO BlockCommented VALUES (1, 'hello');
+      `);
+    });
+    const rows = readTable(data, "BlockCommented");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ val: "hello" });
+  });
+
   it("parses column names when schema has CHECK constraints and CONSTRAINT clauses", () => {
     const data = makeDb((db) => {
       db.exec(`

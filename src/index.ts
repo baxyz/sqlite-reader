@@ -35,7 +35,8 @@ function serialTypeSize(t: number): number {
 
 function readInt48(buf: Uint8Array, pos: number): number {
   const hi = (buf[pos] << 8) | buf[pos + 1];
-  const lo = ((buf[pos + 2] << 24) | (buf[pos + 3] << 16) | (buf[pos + 4] << 8) | buf[pos + 5]) >>> 0;
+  const lo =
+    ((buf[pos + 2] << 24) | (buf[pos + 3] << 16) | (buf[pos + 4] << 8) | buf[pos + 5]) >>> 0;
   const v = hi * 2 ** 32 + lo;
   return v >= 2 ** 47 ? v - 2 ** 48 : v;
 }
@@ -168,10 +169,36 @@ function traverseTable(
   return rows;
 }
 
+// A regex-based `/\*...\*\/` strip can go quadratic on adversarial input
+// (many "/*" with no closing "*/"), so this scans manually — indexOf is
+// linear, unlike a backtracking match attempt restarted at every "/*".
+function stripSqlComments(sql: string): string {
+  let out = "";
+  let i = 0;
+  while (i < sql.length) {
+    if (sql[i] === "-" && sql[i + 1] === "-") {
+      const nl = sql.indexOf("\n", i);
+      // stop before the newline so it's preserved below; unterminated "--"
+      // only happens on invalid SQL that SQLite itself would never have
+      // accepted for CREATE TABLE, so falling off the end here is defensive
+      /* c8 ignore next */ i = nl === -1 ? sql.length : nl;
+      continue;
+    }
+    if (sql[i] === "/" && sql[i + 1] === "*") {
+      const close = sql.indexOf("*/", i + 2);
+      /* c8 ignore next */ i = close === -1 ? sql.length : close + 2; // unterminated "/*" — same reasoning as above
+      continue;
+    }
+    out += sql[i];
+    i++;
+  }
+  return out;
+}
+
 function parseColumnNames(sql: string): string[] {
   // Strip comments first — otherwise a stray paren or comma inside one
   // throws off the depth-tracking split below.
-  const clean = sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const clean = stripSqlComments(sql);
 
   const start = clean.indexOf("(");
   const end = clean.lastIndexOf(")");

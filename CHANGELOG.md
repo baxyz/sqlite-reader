@@ -25,7 +25,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   out-of-bounds data.
 - `parseColumnNames` strips `--` and `/* */` SQL comments before splitting
   column definitions, fixing column misalignment when a `CREATE TABLE`
-  statement contains a comment with an unbalanced paren or comma.
+  statement contains a comment with an unbalanced paren or comma. Comments
+  are stripped with a linear scan rather than a regex, avoiding a
+  CodeQL-flagged ReDoS on adversarial input.
 
 ## [0.2.1] - 2026-07-08
 
