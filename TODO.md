@@ -55,3 +55,9 @@ test ("handles 9-byte varint (max rowid)"). Throwing on them would be a
 regression, not a fix. The only real gap — precision loss for varint values
 beyond `Number.MAX_SAFE_INTEGER` — is inherent to using plain JS `number`
 throughout this lib and isn't worth a targeted fix on its own.
+
+**Update:** `varint()` has since been hardened for a different reason (an
+internal code review, not this point): it's now bounds-checked against the
+buffer and no longer overflows into a negative 32-bit value on a crafted
+multi-byte input. Legitimate 9-byte varints still decode without throwing;
+the precision-loss tradeoff above is unchanged and still accepted.

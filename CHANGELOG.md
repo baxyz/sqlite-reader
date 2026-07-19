@@ -17,17 +17,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - `CHANGELOG.md` is now included in the published npm package.
+- `decodeRecord` computes each column's byte size once (via `serialTypeSize`)
+  instead of maintaining that fact in two places — the bounds check and the
+  per-branch `pos` advancement can no longer drift out of sync.
 
 ### Fixed
 
 - `decodeRecord` bounds-checks each column against the record's payload and
   throws on a truncated or corrupted record instead of silently reading
   out-of-bounds data.
+- `varint()` itself is now bounds-checked and no longer overflows into a
+  negative 32-bit value on a crafted multi-byte input — both were previously
+  unguarded and could let a corrupted length field bypass the bounds check
+  above or spin through a header longer than the actual payload.
+- A single corrupted/truncated row no longer aborts the whole `readTable`
+  call — it's skipped, and the rest of the table's valid rows are still
+  returned.
 - `parseColumnNames` strips `--` and `/* */` SQL comments before splitting
   column definitions, fixing column misalignment when a `CREATE TABLE`
   statement contains a comment with an unbalanced paren or comma. Comments
   are stripped with a linear scan rather than a regex, avoiding a
   CodeQL-flagged ReDoS on adversarial input.
+- Comment stripping and column splitting both now track single-quoted string
+  literals, so a `DEFAULT` value containing `--`, `/*`, `,`, or `(` no longer
+  corrupts or empties the parsed column list. Removing a `/* */` comment also
+  now leaves a space behind, so an identifier directly adjacent to it (no
+  whitespace) no longer merges with the next token.
 
 ## [0.2.1] - 2026-07-08
 
