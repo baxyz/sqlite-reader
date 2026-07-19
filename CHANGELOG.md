@@ -6,11 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-19
+
 ### Added
 
 - `decodeRecord` now decodes 48-bit integers (serial type 5), 64-bit integers
   (serial type 6), and 64-bit floats (serial type 7) instead of returning
   `null` for those columns.
+
+### Changed
+
+- `CHANGELOG.md` is now included in the published npm package.
 
 ### Fixed
 
