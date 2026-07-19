@@ -169,15 +169,19 @@ function traverseTable(
 }
 
 function parseColumnNames(sql: string): string[] {
-  const start = sql.indexOf("(");
-  const end = sql.lastIndexOf(")");
+  // Strip comments first — otherwise a stray paren or comma inside one
+  // throws off the depth-tracking split below.
+  const clean = sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+
+  const start = clean.indexOf("(");
+  const end = clean.lastIndexOf(")");
   /* c8 ignore next */ if (start === -1 || end === -1) return []; // defensive: valid CREATE TABLE always has parens
 
   // Split by top-level commas (skip nested parentheses)
   const defs: string[] = [];
   let depth = 0;
   let cur = "";
-  for (const ch of sql.slice(start + 1, end)) {
+  for (const ch of clean.slice(start + 1, end)) {
     if (ch === "(") depth++;
     else if (ch === ")") depth--;
     else if (ch === "," && depth === 0) {
