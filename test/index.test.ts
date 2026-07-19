@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, unlinkSync } from "node:fs";
-import { readTable } from "../src/index";
+import { readTable, CorruptedRecordError } from "../src/index";
 
 function makeDb(setup: (db: DatabaseSync) => void): Uint8Array {
   const path = join(
@@ -268,6 +268,36 @@ describe("readTable", () => {
     const rows = readTable(data, "Mixed");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ val: "ok" });
+  });
+
+  it("calls onSkippedRow with a CorruptedRecordError for each row it excludes", () => {
+    const data = makeDb((db) => {
+      db.exec("PRAGMA page_size=512");
+      db.exec("CREATE TABLE Trunc (id INTEGER PRIMARY KEY, val TEXT)");
+      db.exec(`INSERT INTO Trunc VALUES (1, '${"x".repeat(50)}')`);
+    });
+
+    const pageSize = 512;
+    const totalPages = data.length / pageSize;
+    let leafBase: number | null = null;
+    for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+      const base = (pageNum - 1) * pageSize;
+      if (data[base] === 13) {
+        leafBase = base;
+        break;
+      }
+    }
+    expect(leafBase).not.toBeNull();
+
+    const ptrBase = leafBase! + 8;
+    const cellPos = leafBase! + ((data[ptrBase] << 8) | data[ptrBase + 1]);
+    data[cellPos] = 4;
+
+    const skipped: CorruptedRecordError[] = [];
+    const rows = readTable(data, "Trunc", (e) => skipped.push(e));
+    expect(rows).toEqual([]);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]).toBeInstanceOf(CorruptedRecordError);
   });
 
   it("parses column names when schema has a comment containing an unbalanced paren/comma", () => {

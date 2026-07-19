@@ -4,6 +4,11 @@
 type SqliteValue = string | number | null;
 export type SqliteRow = Record<string, SqliteValue>;
 
+// Thrown for corruption confined to a single record (a truncated/malformed
+// varint or payload). traverseTable catches only this type and skips the
+// row — any other error indicates a real bug and is left to propagate.
+export class CorruptedRecordError extends Error {}
+
 function u16(buf: Uint8Array, off: number): number {
   return (buf[off] << 8) | buf[off + 1];
 }
@@ -15,7 +20,7 @@ function u32(buf: Uint8Array, off: number): number {
 function varint(buf: Uint8Array, pos: number): [value: number, size: number] {
   let v = 0;
   for (let i = 0; i < 8; i++) {
-    if (pos + i >= buf.length) throw new Error("Invalid varint: truncated buffer");
+    if (pos + i >= buf.length) throw new CorruptedRecordError("Invalid varint: truncated buffer");
     const b = buf[pos + i];
     // Plain multiplication, not `v << 7` — `<<` coerces to a 32-bit SIGNED
     // int, so a corrupted multi-byte varint can wrap negative after just a
@@ -24,7 +29,7 @@ function varint(buf: Uint8Array, pos: number): [value: number, size: number] {
     v = v * 128 + (b & 0x7f);
     if (!(b & 0x80)) return [v, i + 1];
   }
-  if (pos + 8 >= buf.length) throw new Error("Invalid varint: truncated buffer");
+  if (pos + 8 >= buf.length) throw new CorruptedRecordError("Invalid varint: truncated buffer");
   return [v * 256 + buf[pos + 8], 9];
 }
 
@@ -83,7 +88,7 @@ function decodeRecord(payload: Uint8Array): SqliteValue[] {
     // with what's actually consumed.
     const size = serialTypeSize(t);
     if (pos + size > payload.length) {
-      throw new Error("Invalid record: payload too short for declared column type");
+      throw new CorruptedRecordError("Invalid record: payload too short for declared column type");
     }
 
     if (t === 0) {
@@ -131,6 +136,7 @@ function traverseTable(
   pageNum: number,
   pageSize: number,
   visited: Set<number> = new Set(),
+  onSkippedRow?: (error: CorruptedRecordError) => void,
 ): SqliteValue[][] {
   // A well-formed B-tree never revisits a page — this only trips on a
   // corrupted/malicious child pointer, which would otherwise recurse until
@@ -152,9 +158,9 @@ function traverseTable(
     const ptrBase = base + hdr + 12;
     for (let i = 0; i < numCells; i++) {
       const cellPos = base + u16(db, ptrBase + i * 2);
-      rows.push(...traverseTable(db, u32(db, cellPos), pageSize, visited));
+      rows.push(...traverseTable(db, u32(db, cellPos), pageSize, visited, onSkippedRow));
     }
-    rows.push(...traverseTable(db, rightmost, pageSize, visited));
+    rows.push(...traverseTable(db, rightmost, pageSize, visited, onSkippedRow));
   }
 
   if (pageType === 13) {
@@ -168,9 +174,16 @@ function traverseTable(
         const [, rs] = varint(db, pos);
         pos += rs; // skip rowid
         rows.push(decodeRecord(db.subarray(pos, pos + payloadLen)));
-      } catch {
+      } catch (e) {
         // A single corrupted/truncated row shouldn't take down the whole
-        // table scan — skip it and keep whatever other rows are still valid.
+        // table scan — skip it and keep whatever other rows are still
+        // valid. Only a recognized corruption error is swallowed; anything
+        // else (a real bug) propagates instead of being silently absorbed.
+        // Every throw site reachable from this block only ever raises
+        // CorruptedRecordError today, so the rethrow is an untestable
+        // safety net against a future regression, not dead code.
+        /* c8 ignore next */ if (!(e instanceof CorruptedRecordError)) throw e;
+        onSkippedRow?.(e);
       }
     }
   }
@@ -288,7 +301,17 @@ function parseColumnNames(sql: string): string[] {
 
 const MAGIC = "SQLite format 3\0";
 
-export function readTable(db: Uint8Array, tableName: string): SqliteRow[] {
+/**
+ * @param onSkippedRow Called once per row excluded because it was corrupted
+ * (truncated payload, malformed varint). Without it, a corrupted row is
+ * indistinguishable from the table simply having fewer rows — pass a
+ * callback to detect or log data loss.
+ */
+export function readTable(
+  db: Uint8Array,
+  tableName: string,
+  onSkippedRow?: (error: CorruptedRecordError) => void,
+): SqliteRow[] {
   for (let i = 0; i < 16; i++) {
     if (db[i] !== MAGIC.charCodeAt(i)) throw new Error("not a SQLite3 file");
   }
@@ -297,7 +320,7 @@ export function readTable(db: Uint8Array, tableName: string): SqliteRow[] {
   if (pageSize === 1) pageSize = 65536;
 
   // sqlite_master is always at root page 1; columns: type, name, tbl_name, rootpage, sql
-  const master = traverseTable(db, 1, pageSize);
+  const master = traverseTable(db, 1, pageSize, undefined, onSkippedRow);
 
   let rootPage: number | null = null;
   let columnSql: string | null = null;
@@ -313,7 +336,7 @@ export function readTable(db: Uint8Array, tableName: string): SqliteRow[] {
   if (rootPage === null) return [];
 
   const columns = columnSql ? parseColumnNames(columnSql) : /* c8 ignore next */ [];
-  return traverseTable(db, rootPage, pageSize).map((row) =>
+  return traverseTable(db, rootPage, pageSize, undefined, onSkippedRow).map((row) =>
     Object.fromEntries(columns.map((col, i) => [col, row[i] ?? null])),
   );
 }
