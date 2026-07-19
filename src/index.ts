@@ -312,6 +312,16 @@ export function readTable(
   tableName: string,
   onSkippedRow?: (error: CorruptedRecordError) => void,
 ): SqliteRow[] {
+  if (!(db instanceof Uint8Array)) {
+    throw new TypeError("readTable: db must be a Uint8Array");
+  }
+  // 100 bytes is the fixed size of the SQLite file header itself (before
+  // page 1's own B-tree header even starts) — nothing shorter than that
+  // could possibly be a valid database file.
+  if (db.length < 100) {
+    throw new Error(`readTable: buffer too short to be a SQLite database (${db.length} bytes)`);
+  }
+
   for (let i = 0; i < 16; i++) {
     if (db[i] !== MAGIC.charCodeAt(i)) throw new Error("not a SQLite3 file");
   }
