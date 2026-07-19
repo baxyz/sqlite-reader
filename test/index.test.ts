@@ -175,6 +175,63 @@ describe("readTable", () => {
     expect(() => readTable(data, "Trunc")).toThrow(/payload too short/);
   });
 
+  it("throws when a record's header varint is truncated to nothing", () => {
+    const data = makeDb((db) => {
+      db.exec("PRAGMA page_size=512");
+      db.exec("CREATE TABLE Empty (id INTEGER PRIMARY KEY, val TEXT)");
+      db.exec("INSERT INTO Empty VALUES (1, 'x')");
+    });
+
+    const pageSize = 512;
+    const totalPages = data.length / pageSize;
+    let leafBase: number | null = null;
+    for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+      const base = (pageNum - 1) * pageSize;
+      if (data[base] === 13) {
+        leafBase = base;
+        break;
+      }
+    }
+    expect(leafBase).not.toBeNull();
+
+    const ptrBase = leafBase! + 8;
+    const cellPos = leafBase! + ((data[ptrBase] << 8) | data[ptrBase + 1]);
+    // Declare a zero-length payload — too short to contain even the header
+    // varint decodeRecord reads first.
+    data[cellPos] = 0;
+
+    expect(() => readTable(data, "Empty")).toThrow(/truncated buffer/);
+  });
+
+  it("throws when a header-length varint never terminates within the payload", () => {
+    const data = makeDb((db) => {
+      db.exec("PRAGMA page_size=512");
+      db.exec("CREATE TABLE NoTerm (id INTEGER PRIMARY KEY, val TEXT)");
+      db.exec(`INSERT INTO NoTerm VALUES (1, '${"x".repeat(50)}')`);
+    });
+
+    const pageSize = 512;
+    const totalPages = data.length / pageSize;
+    let leafBase: number | null = null;
+    for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+      const base = (pageNum - 1) * pageSize;
+      if (data[base] === 13) {
+        leafBase = base;
+        break;
+      }
+    }
+    expect(leafBase).not.toBeNull();
+
+    const ptrBase = leafBase! + 8;
+    const cellPos = leafBase! + ((data[ptrBase] << 8) | data[ptrBase + 1]);
+    data[cellPos] = 8; // declare an 8-byte payload (1-byte payload-length varint, 1-byte rowid)
+    // Fill it with continuation-flagged bytes so the header-length varint
+    // never terminates within those 8 bytes and runs off the end.
+    for (let j = 0; j < 8; j++) data[cellPos + 2 + j] = 0xff;
+
+    expect(() => readTable(data, "NoTerm")).toThrow(/truncated buffer/);
+  });
+
   it("parses column names when schema has a comment containing an unbalanced paren/comma", () => {
     const data = makeDb((db) => {
       db.exec(`

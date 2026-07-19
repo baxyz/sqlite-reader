@@ -15,10 +15,16 @@ function u32(buf: Uint8Array, off: number): number {
 function varint(buf: Uint8Array, pos: number): [value: number, size: number] {
   let v = 0;
   for (let i = 0; i < 8; i++) {
+    if (pos + i >= buf.length) throw new Error("Invalid varint: truncated buffer");
     const b = buf[pos + i];
-    v = (v << 7) | (b & 0x7f);
+    // Plain multiplication, not `v << 7` — `<<` coerces to a 32-bit SIGNED
+    // int, so a corrupted multi-byte varint can wrap negative after just a
+    // few iterations. Multiplication stays a non-negative, if imprecise
+    // beyond 2^53, number for the full 8-byte range.
+    v = v * 128 + (b & 0x7f);
     if (!(b & 0x80)) return [v, i + 1];
   }
+  if (pos + 8 >= buf.length) throw new Error("Invalid varint: truncated buffer");
   return [v * 256 + buf[pos + 8], 9];
 }
 
