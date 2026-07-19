@@ -22,4 +22,5 @@ writeFileSync(
   }, null, 2) + '\n',
 )
 copyFileSync(resolve(root, 'LICENSE'), resolve(dist, 'LICENSE'))
+copyFileSync(resolve(root, 'CHANGELOG.md'), resolve(dist, 'CHANGELOG.md'))
 console.log('pack: dist/package.json generated')
