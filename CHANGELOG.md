@@ -1,0 +1,55 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+### Added
+
+- `decodeRecord` now decodes 48-bit integers (serial type 5), 64-bit integers
+  (serial type 6), and 64-bit floats (serial type 7) instead of returning
+  `null` for those columns.
+
+### Fixed
+
+- `decodeRecord` bounds-checks each column against the record's payload and
+  throws on a truncated or corrupted record instead of silently reading
+  out-of-bounds data.
+- `parseColumnNames` strips `--` and `/* */` SQL comments before splitting
+  column definitions, fixing column misalignment when a `CREATE TABLE`
+  statement contains a comment with an unbalanced paren or comma.
+
+## [0.2.1] - 2026-07-08
+
+### Fixed
+
+- Guard against cyclic B-tree page pointers in `traverseTable`, which
+  otherwise caused unbounded recursion on a corrupted or malicious database
+  file.
+
+## [0.2.0] - 2026-06-28
+
+### Changed
+
+- Restructured `traverseTable` for full branch coverage and added a 100%
+  coverage threshold to the test suite.
+- Migrated the build script from `pack.ts` to `pack.mjs`, dropping the `tsx`
+  dependency and fixing the `engines` field.
+- Removed `DOM` from the TypeScript `lib` configuration (this package never
+  touches the DOM).
+- Added CI, CodeQL, and release GitHub Actions workflows.
+
+## [0.1.0] - 2026-06-28
+
+### Added
+
+- Initial release: a dependency-free, read-only SQLite3 binary parser
+  (`readTable(db, tableName)`) that walks leaf and interior B-tree pages and
+  decodes rows into plain objects.
+
+[Unreleased]: https://github.com/baxyz/sqlite-reader/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/baxyz/sqlite-reader/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/baxyz/sqlite-reader/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/baxyz/sqlite-reader/releases/tag/v0.1.0
