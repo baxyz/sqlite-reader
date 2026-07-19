@@ -178,35 +178,50 @@ function traverseTable(
   return rows;
 }
 
+// SQLite recognizes four quoting styles: '...' and "..." (string literal or
+// identifier, doubled-quote escape) and `...` and [...] (identifier only,
+// MySQL/SQL-Server compat — [...] has no escape, it just ends at the first ]).
+const QUOTE_CLOSE: Record<string, string> = { "'": "'", '"': '"', "`": "`", "[": "]" };
+
+// Scans a quoted region starting at `start` (one of the four opening quote
+// characters above) and returns the index just past its matching close.
+// Throws on an unterminated quote instead of returning early — silently
+// treating the rest of the input as still "inside" the quote would swallow
+// every following structural character (comment markers, commas, parens)
+// as string content, which only happens on a corrupted/malicious schema
+// SQLite's own parser would never have produced.
+function skipQuoted(s: string, start: number): number {
+  const open = s[start];
+  const close = QUOTE_CLOSE[open];
+  const escapes = open !== "["; // [...] has no escape mechanism
+  let i = start + 1;
+  while (i < s.length) {
+    if (s[i] === close) {
+      if (escapes && s[i + 1] === close) {
+        i += 2;
+        continue;
+      }
+      return i + 1;
+    }
+    i++;
+  }
+  throw new Error(`Invalid SQL: unterminated ${open}${close} literal`);
+}
+
 // A regex-based `/\*...\*\/` strip can go quadratic on adversarial input
 // (many "/*" with no closing "*/"), so this scans manually — indexOf is
 // linear, unlike a backtracking match attempt restarted at every "/*".
 //
-// Tracks single-quoted string literals so a "--"/"/*" inside a quoted
-// default value (e.g. `DEFAULT 'a--b'`) isn't mistaken for a real comment;
-// '' is SQL's escaped single quote and keeps the string open.
+// Skips over quoted regions so a "--"/"/*" inside one (e.g. `DEFAULT
+// 'a--b'`) isn't mistaken for a real comment.
 function stripSqlComments(sql: string): string {
   let out = "";
   let i = 0;
-  let inString = false;
   while (i < sql.length) {
-    if (inString) {
-      out += sql[i];
-      if (sql[i] === "'") {
-        if (sql[i + 1] === "'") {
-          out += "'";
-          i += 2;
-          continue;
-        }
-        inString = false;
-      }
-      i++;
-      continue;
-    }
-    if (sql[i] === "'") {
-      inString = true;
-      out += sql[i];
-      i++;
+    if (QUOTE_CLOSE[sql[i]]) {
+      const end = skipQuoted(sql, i);
+      out += sql.slice(i, end);
+      i = end;
       continue;
     }
     if (sql[i] === "-" && sql[i + 1] === "-") {
@@ -238,31 +253,22 @@ function parseColumnNames(sql: string): string[] {
   const end = clean.lastIndexOf(")");
   /* c8 ignore next */ if (start === -1 || end === -1) return []; // defensive: valid CREATE TABLE always has parens
 
-  // Split by top-level commas (skip nested parentheses and quoted strings —
+  // Split by top-level commas (skip nested parentheses and quoted regions —
   // a default value like 'a,b' or 'a(b' must not affect the split)
   const body = clean.slice(start + 1, end);
   const defs: string[] = [];
   let depth = 0;
   let cur = "";
-  let inString = false;
   let i = 0;
   while (i < body.length) {
     const ch = body[i];
-    if (inString) {
-      cur += ch;
-      if (ch === "'") {
-        if (body[i + 1] === "'") {
-          cur += "'";
-          i += 2;
-          continue;
-        }
-        inString = false;
-      }
-      i++;
+    if (QUOTE_CLOSE[ch]) {
+      const j = skipQuoted(body, i);
+      cur += body.slice(i, j);
+      i = j;
       continue;
     }
-    if (ch === "'") inString = true;
-    else if (ch === "(") depth++;
+    if (ch === "(") depth++;
     else if (ch === ")") depth--;
     else if (ch === "," && depth === 0) {
       defs.push(cur.trim());
