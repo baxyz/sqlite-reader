@@ -90,6 +90,7 @@ jobs:
           if (paths.includes('./dist/')) throw new Error('dist/package.json still has ./dist/ prefix in paths')
 
           if (!existsSync('dist/LICENSE')) throw new Error('dist/LICENSE is missing')
+          if (!existsSync('dist/CHANGELOG.md')) throw new Error('dist/CHANGELOG.md is missing')
 
           console.log('dist/package.json OK — no forbidden fields, paths clean, assets present')
           " --input-type=module
