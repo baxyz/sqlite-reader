@@ -146,7 +146,7 @@ describe("readTable", () => {
     });
   });
 
-  it("throws when a corrupted payload length truncates a column's declared bytes", () => {
+  it("skips a row whose corrupted payload length truncates a column's declared bytes, instead of throwing", () => {
     const data = makeDb((db) => {
       db.exec("PRAGMA page_size=512");
       db.exec("CREATE TABLE Trunc (id INTEGER PRIMARY KEY, val TEXT)");
@@ -172,10 +172,11 @@ describe("readTable", () => {
     // string that the record header still declares.
     data[cellPos] = 4;
 
-    expect(() => readTable(data, "Trunc")).toThrow(/payload too short/);
+    expect(() => readTable(data, "Trunc")).not.toThrow();
+    expect(readTable(data, "Trunc")).toEqual([]);
   });
 
-  it("throws when a record's header varint is truncated to nothing", () => {
+  it("skips a row whose header varint is truncated to nothing, instead of throwing", () => {
     const data = makeDb((db) => {
       db.exec("PRAGMA page_size=512");
       db.exec("CREATE TABLE Empty (id INTEGER PRIMARY KEY, val TEXT)");
@@ -200,10 +201,11 @@ describe("readTable", () => {
     // varint decodeRecord reads first.
     data[cellPos] = 0;
 
-    expect(() => readTable(data, "Empty")).toThrow(/truncated buffer/);
+    expect(() => readTable(data, "Empty")).not.toThrow();
+    expect(readTable(data, "Empty")).toEqual([]);
   });
 
-  it("throws when a header-length varint never terminates within the payload", () => {
+  it("skips a row whose header-length varint never terminates within the payload, instead of throwing", () => {
     const data = makeDb((db) => {
       db.exec("PRAGMA page_size=512");
       db.exec("CREATE TABLE NoTerm (id INTEGER PRIMARY KEY, val TEXT)");
@@ -229,7 +231,43 @@ describe("readTable", () => {
     // never terminates within those 8 bytes and runs off the end.
     for (let j = 0; j < 8; j++) data[cellPos + 2 + j] = 0xff;
 
-    expect(() => readTable(data, "NoTerm")).toThrow(/truncated buffer/);
+    expect(() => readTable(data, "NoTerm")).not.toThrow();
+    expect(readTable(data, "NoTerm")).toEqual([]);
+  });
+
+  it("skips only the corrupted row and still returns the other valid rows in the table", () => {
+    const data = makeDb((db) => {
+      db.exec("PRAGMA page_size=512");
+      db.exec("CREATE TABLE Mixed (id INTEGER PRIMARY KEY, val TEXT)");
+      db.exec(`INSERT INTO Mixed VALUES (1, '${"x".repeat(50)}')`);
+      db.exec("INSERT INTO Mixed VALUES (2, 'ok')");
+    });
+
+    const pageSize = 512;
+    const totalPages = data.length / pageSize;
+    let leafBase: number | null = null;
+    for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+      const base = (pageNum - 1) * pageSize;
+      if (data[base] === 13) {
+        leafBase = base;
+        break;
+      }
+    }
+    expect(leafBase).not.toBeNull();
+
+    const numCells = (data[leafBase! + 3] << 8) | data[leafBase! + 4];
+    expect(numCells).toBe(2);
+
+    const ptrBase = leafBase! + 8;
+    // Cell pointers are stored in key order, so the first cell is row id=1
+    // (the long string) — corrupt just that one's payload length so it gets
+    // skipped, while row id=2 ('ok') is left untouched.
+    const firstCellPos = leafBase! + ((data[ptrBase] << 8) | data[ptrBase + 1]);
+    data[firstCellPos] = 4;
+
+    const rows = readTable(data, "Mixed");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ val: "ok" });
   });
 
   it("parses column names when schema has a comment containing an unbalanced paren/comma", () => {
