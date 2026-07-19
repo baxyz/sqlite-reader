@@ -77,7 +77,7 @@ describe("readTable", () => {
     expect(() => readTable(bad, "Profiles")).toThrow("not a SQLite3 file");
   });
 
-  it("decodes all supported integer sizes and returns null for unsupported types", () => {
+  it("decodes all integer/float sizes including 48/64-bit and float64, returns null for blobs", () => {
     const data = makeDb((db) => {
       db.exec(`
         CREATE TABLE Types (
@@ -117,12 +117,32 @@ describe("readTable", () => {
       n3: -40000,
       p4: 9000000,
       n4: -9000000,
-      big6: null,
-      big8: null,
-      flt: null,
+      big6: 2147483648,
+      big8: 140737488355328,
+      flt: 3.14,
       blb: null,
       zero: 0,
       one: 1,
+    });
+  });
+
+  it("decodes negative 48-bit/64-bit integers and negative float64", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE Signed (
+          id   INTEGER PRIMARY KEY,
+          big6 INTEGER,
+          big8 INTEGER,
+          flt  REAL
+        );
+        INSERT INTO Signed VALUES (1, -140737488355328, -9223372036854775808, -3.14);
+      `);
+    });
+    const rows = readTable(data, "Signed");
+    expect(rows[0]).toMatchObject({
+      big6: -140737488355328,
+      big8: -9223372036854775808,
+      flt: -3.14,
     });
   });
 

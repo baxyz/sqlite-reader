@@ -33,6 +33,26 @@ function serialTypeSize(t: number): number {
   return Math.floor((t - 12) / 2); // t >= 12: blob (even) or text (odd) byte length
 }
 
+function readInt48(buf: Uint8Array, pos: number): number {
+  const hi = (buf[pos] << 8) | buf[pos + 1];
+  const lo = ((buf[pos + 2] << 24) | (buf[pos + 3] << 16) | (buf[pos + 4] << 8) | buf[pos + 5]) >>> 0;
+  const v = hi * 2 ** 32 + lo;
+  return v >= 2 ** 47 ? v - 2 ** 48 : v;
+}
+
+// Converts to a plain number, so magnitudes beyond Number.MAX_SAFE_INTEGER
+// (2^53) lose precision — an inherent tradeoff of this lib's number-only
+// SqliteValue type versus the full 64-bit range SQLite allows.
+function readInt64(buf: Uint8Array, pos: number): number {
+  const view = new DataView(buf.buffer, buf.byteOffset + pos, 8);
+  return Number(view.getBigInt64(0, false));
+}
+
+function readFloat64(buf: Uint8Array, pos: number): number {
+  const view = new DataView(buf.buffer, buf.byteOffset + pos, 8);
+  return view.getFloat64(0, false);
+}
+
 function decodeRecord(payload: Uint8Array): SqliteValue[] {
   let pos = 0;
   const [hdrEnd, hs] = varint(payload, pos);
@@ -72,14 +92,14 @@ function decodeRecord(payload: Uint8Array): SqliteValue[] {
       pos += 4;
       values.push(v >= 0x80000000 ? v - 0x100000000 : v);
     } else if (t === 5) {
+      values.push(readInt48(payload, pos));
       pos += 6;
-      values.push(null);
     } else if (t === 6) {
+      values.push(readInt64(payload, pos));
       pos += 8;
-      values.push(null);
     } else if (t === 7) {
+      values.push(readFloat64(payload, pos));
       pos += 8;
-      values.push(null);
     } else if (t === 8) {
       values.push(0);
     } else if (t === 9) {
