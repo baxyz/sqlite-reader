@@ -126,6 +126,35 @@ describe("readTable", () => {
     });
   });
 
+  it("throws when a corrupted payload length truncates a column's declared bytes", () => {
+    const data = makeDb((db) => {
+      db.exec("PRAGMA page_size=512");
+      db.exec("CREATE TABLE Trunc (id INTEGER PRIMARY KEY, val TEXT)");
+      db.exec(`INSERT INTO Trunc VALUES (1, '${"x".repeat(50)}')`);
+    });
+
+    const pageSize = 512;
+    const totalPages = data.length / pageSize;
+    let leafBase: number | null = null;
+    for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+      const base = (pageNum - 1) * pageSize;
+      if (data[base] === 13) {
+        leafBase = base;
+        break;
+      }
+    }
+    expect(leafBase).not.toBeNull();
+
+    const ptrBase = leafBase! + 8;
+    const cellPos = leafBase! + ((data[ptrBase] << 8) | data[ptrBase + 1]);
+    // First byte of the cell is the payload-length varint. Shrink it so the
+    // payload slice handed to decodeRecord no longer covers the 50-byte
+    // string that the record header still declares.
+    data[cellPos] = 4;
+
+    expect(() => readTable(data, "Trunc")).toThrow(/payload too short/);
+  });
+
   it("parses column names when schema has CHECK constraints and CONSTRAINT clauses", () => {
     const data = makeDb((db) => {
       db.exec(`

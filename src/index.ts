@@ -22,6 +22,17 @@ function varint(buf: Uint8Array, pos: number): [value: number, size: number] {
   return [v * 256 + buf[pos + 8], 9];
 }
 
+function serialTypeSize(t: number): number {
+  if (t === 0 || t === 8 || t === 9 || t === 10 || t === 11) return 0;
+  if (t === 1) return 1;
+  if (t === 2) return 2;
+  if (t === 3) return 3;
+  if (t === 4) return 4;
+  if (t === 5) return 6;
+  if (t === 6 || t === 7) return 8;
+  return Math.floor((t - 12) / 2); // t >= 12: blob (even) or text (odd) byte length
+}
+
 function decodeRecord(payload: Uint8Array): SqliteValue[] {
   let pos = 0;
   const [hdrEnd, hs] = varint(payload, pos);
@@ -39,6 +50,10 @@ function decodeRecord(payload: Uint8Array): SqliteValue[] {
   const dec = new TextDecoder();
 
   for (const t of types) {
+    if (pos + serialTypeSize(t) > payload.length) {
+      throw new Error("Invalid record: payload too short for declared column type");
+    }
+
     if (t === 0) {
       values.push(null);
     } else if (t === 1) {
