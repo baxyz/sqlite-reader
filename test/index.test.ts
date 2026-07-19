@@ -77,6 +77,16 @@ describe("readTable", () => {
     expect(() => readTable(bad, "Profiles")).toThrow("not a SQLite3 file");
   });
 
+  it("throws a TypeError when db is not a Uint8Array", () => {
+    // @ts-expect-error — deliberately passing the wrong type
+    expect(() => readTable("not a buffer", "Profiles")).toThrow(TypeError);
+  });
+
+  it("throws when db is too short to be a SQLite database", () => {
+    const tooShort = new Uint8Array(50);
+    expect(() => readTable(tooShort, "Profiles")).toThrow(/too short/);
+  });
+
   it("decodes all integer/float sizes including 48/64-bit and float64, returns null for blobs", () => {
     const data = makeDb((db) => {
       db.exec(`
