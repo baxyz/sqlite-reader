@@ -176,10 +176,34 @@ function traverseTable(
 // A regex-based `/\*...\*\/` strip can go quadratic on adversarial input
 // (many "/*" with no closing "*/"), so this scans manually — indexOf is
 // linear, unlike a backtracking match attempt restarted at every "/*".
+//
+// Tracks single-quoted string literals so a "--"/"/*" inside a quoted
+// default value (e.g. `DEFAULT 'a--b'`) isn't mistaken for a real comment;
+// '' is SQL's escaped single quote and keeps the string open.
 function stripSqlComments(sql: string): string {
   let out = "";
   let i = 0;
+  let inString = false;
   while (i < sql.length) {
+    if (inString) {
+      out += sql[i];
+      if (sql[i] === "'") {
+        if (sql[i + 1] === "'") {
+          out += "'";
+          i += 2;
+          continue;
+        }
+        inString = false;
+      }
+      i++;
+      continue;
+    }
+    if (sql[i] === "'") {
+      inString = true;
+      out += sql[i];
+      i++;
+      continue;
+    }
     if (sql[i] === "-" && sql[i + 1] === "-") {
       const nl = sql.indexOf("\n", i);
       // stop before the newline so it's preserved below; unterminated "--"
@@ -191,6 +215,7 @@ function stripSqlComments(sql: string): string {
     if (sql[i] === "/" && sql[i + 1] === "*") {
       const close = sql.indexOf("*/", i + 2);
       /* c8 ignore next */ i = close === -1 ? sql.length : close + 2; // unterminated "/*" — same reasoning as above
+      out += " "; // a comment is whitespace-equivalent — don't merge the tokens on either side
       continue;
     }
     out += sql[i];
@@ -208,19 +233,40 @@ function parseColumnNames(sql: string): string[] {
   const end = clean.lastIndexOf(")");
   /* c8 ignore next */ if (start === -1 || end === -1) return []; // defensive: valid CREATE TABLE always has parens
 
-  // Split by top-level commas (skip nested parentheses)
+  // Split by top-level commas (skip nested parentheses and quoted strings —
+  // a default value like 'a,b' or 'a(b' must not affect the split)
+  const body = clean.slice(start + 1, end);
   const defs: string[] = [];
   let depth = 0;
   let cur = "";
-  for (const ch of clean.slice(start + 1, end)) {
-    if (ch === "(") depth++;
+  let inString = false;
+  let i = 0;
+  while (i < body.length) {
+    const ch = body[i];
+    if (inString) {
+      cur += ch;
+      if (ch === "'") {
+        if (body[i + 1] === "'") {
+          cur += "'";
+          i += 2;
+          continue;
+        }
+        inString = false;
+      }
+      i++;
+      continue;
+    }
+    if (ch === "'") inString = true;
+    else if (ch === "(") depth++;
     else if (ch === ")") depth--;
     else if (ch === "," && depth === 0) {
       defs.push(cur.trim());
       cur = "";
+      i++;
       continue;
     }
     cur += ch;
+    i++;
   }
   /* c8 ignore next */ if (cur.trim()) defs.push(cur.trim());
 
