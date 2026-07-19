@@ -264,6 +264,101 @@ describe("readTable", () => {
     expect(rows[0]).toMatchObject({ val: "hello" });
   });
 
+  it("does not merge identifiers across a block comment with no surrounding whitespace", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE NoGap (
+          id/*primary key*/INTEGER PRIMARY KEY,
+          val TEXT
+        );
+        INSERT INTO NoGap VALUES (1, 'hello');
+      `);
+    });
+    const rows = readTable(data, "NoGap");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ val: "hello" });
+  });
+
+  it("does not treat -- inside a string literal as a comment", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE Quoted (
+          id   INTEGER PRIMARY KEY,
+          note TEXT DEFAULT 'a--b',
+          val  TEXT
+        );
+        INSERT INTO Quoted VALUES (1, 'x', 'hello');
+      `);
+    });
+    const rows = readTable(data, "Quoted");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ note: "x", val: "hello" });
+  });
+
+  it("does not treat /* inside a string literal as a comment", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE QuotedBlock (
+          id   INTEGER PRIMARY KEY,
+          note TEXT DEFAULT 'a/*b',
+          val  TEXT
+        );
+        INSERT INTO QuotedBlock VALUES (1, 'x', 'hello');
+      `);
+    });
+    const rows = readTable(data, "QuotedBlock");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ note: "x", val: "hello" });
+  });
+
+  it("does not split on a comma inside a string literal default value", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE QuotedComma (
+          id   INTEGER PRIMARY KEY,
+          note TEXT DEFAULT 'a,b',
+          val  TEXT
+        );
+        INSERT INTO QuotedComma VALUES (1, 'x', 'hello');
+      `);
+    });
+    const rows = readTable(data, "QuotedComma");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ note: "x", val: "hello" });
+  });
+
+  it("does not desync paren depth on a paren inside a string literal default value", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE QuotedParen (
+          id   INTEGER PRIMARY KEY,
+          note TEXT DEFAULT 'a(b',
+          val  TEXT
+        );
+        INSERT INTO QuotedParen VALUES (1, 'x', 'hello');
+      `);
+    });
+    const rows = readTable(data, "QuotedParen");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ note: "x", val: "hello" });
+  });
+
+  it("handles an escaped '' single quote inside a string literal default value", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE QuotedEscape (
+          id   INTEGER PRIMARY KEY,
+          note TEXT DEFAULT 'it''s, (ok)',
+          val  TEXT
+        );
+        INSERT INTO QuotedEscape VALUES (1, 'x', 'hello');
+      `);
+    });
+    const rows = readTable(data, "QuotedEscape");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ note: "x", val: "hello" });
+  });
+
   it("parses column names when schema has CHECK constraints and CONSTRAINT clauses", () => {
     const data = makeDb((db) => {
       db.exec(`
