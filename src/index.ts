@@ -77,52 +77,50 @@ function decodeRecord(payload: Uint8Array): SqliteValue[] {
   const dec = new TextDecoder();
 
   for (const t of types) {
-    if (pos + serialTypeSize(t) > payload.length) {
+    // `size` is the single source of truth for this type's byte width —
+    // every branch below reads exactly `size` bytes and `pos` only ever
+    // advances by `size`, so the bounds check can never drift out of sync
+    // with what's actually consumed.
+    const size = serialTypeSize(t);
+    if (pos + size > payload.length) {
       throw new Error("Invalid record: payload too short for declared column type");
     }
 
     if (t === 0) {
       values.push(null);
     } else if (t === 1) {
-      const v = payload[pos++];
+      const v = payload[pos];
       values.push(v >= 0x80 ? v - 0x100 : v);
     } else if (t === 2) {
       const v = u16(payload, pos);
-      pos += 2;
       values.push(v >= 0x8000 ? v - 0x10000 : v);
     } else if (t === 3) {
       const v = (payload[pos] << 16) | (payload[pos + 1] << 8) | payload[pos + 2];
-      pos += 3;
       values.push(v >= 0x800000 ? v - 0x1000000 : v);
     } else if (t === 4) {
       const v = u32(payload, pos);
-      pos += 4;
       values.push(v >= 0x80000000 ? v - 0x100000000 : v);
     } else if (t === 5) {
       values.push(readInt48(payload, pos));
-      pos += 6;
     } else if (t === 6) {
       values.push(readInt64(payload, pos));
-      pos += 8;
     } else if (t === 7) {
       values.push(readFloat64(payload, pos));
-      pos += 8;
     } else if (t === 8) {
       values.push(0);
     } else if (t === 9) {
       values.push(1);
     } else if (t >= 12 && t % 2 === 0) {
-      pos += (t - 12) / 2;
       values.push(null); // blob — not supported
     } else if (t >= 13 && t % 2 === 1) {
-      const len = (t - 13) / 2;
-      values.push(dec.decode(payload.subarray(pos, pos + len)));
-      pos += len;
+      values.push(dec.decode(payload.subarray(pos, pos + size)));
       /* c8 ignore start */
     } else {
       values.push(null);
     } // serial types 10/11 reserved — never emitted by SQLite
     /* c8 ignore stop */
+
+    pos += size;
   }
 
   return values;
