@@ -175,6 +175,22 @@ describe("readTable", () => {
     expect(() => readTable(data, "Trunc")).toThrow(/payload too short/);
   });
 
+  it("parses column names when schema has a comment containing an unbalanced paren/comma", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE Commented (
+          -- unbalanced paren) in a comment, before the real columns
+          id  INTEGER PRIMARY KEY,
+          val TEXT
+        );
+        INSERT INTO Commented VALUES (1, 'hello');
+      `);
+    });
+    const rows = readTable(data, "Commented");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ val: "hello" });
+  });
+
   it("parses column names when schema has CHECK constraints and CONSTRAINT clauses", () => {
     const data = makeDb((db) => {
       db.exec(`
