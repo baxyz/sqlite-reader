@@ -397,6 +397,52 @@ describe("readTable", () => {
     expect(rows[0]).toMatchObject({ note: "x", val: "hello" });
   });
 
+  it("does not treat -- inside a double-quoted string literal as a comment", () => {
+    const data = makeDb((db) => {
+      db.exec(`
+        CREATE TABLE QuotedDouble (
+          id   INTEGER PRIMARY KEY,
+          note TEXT DEFAULT "a--b",
+          val  TEXT
+        );
+        INSERT INTO QuotedDouble VALUES (1, 'x', 'hello');
+      `);
+    });
+    const rows = readTable(data, "QuotedDouble");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ note: "x", val: "hello" });
+  });
+
+  it("does not split on a comma or paren inside a backtick-quoted default value", () => {
+    const data = makeDb((db) => {
+      db.exec(
+        "CREATE TABLE QuotedBacktick (" +
+          "id INTEGER PRIMARY KEY, note TEXT DEFAULT `a,(b`, val TEXT" +
+          ")",
+      );
+      db.exec("INSERT INTO QuotedBacktick (val) VALUES ('hello')");
+    });
+    const rows = readTable(data, "QuotedBacktick");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ note: "a,(b", val: "hello" });
+  });
+
+  it("throws when the stored CREATE TABLE SQL has an unterminated string literal", () => {
+    const data = makeDb((db) => {
+      db.exec("CREATE TABLE Odd (id INTEGER, val TEXT)");
+    });
+
+    // SQLite itself would never accept a CREATE TABLE with an unmatched
+    // quote — simulate a corrupted sqlite_master row by turning the space
+    // right before "val" into a stray, unterminated single quote.
+    const text = Buffer.from(data).toString("latin1");
+    const idx = text.indexOf(" val TEXT");
+    expect(idx).toBeGreaterThan(-1);
+    data[idx] = "'".charCodeAt(0);
+
+    expect(() => readTable(data, "Odd")).toThrow(/unterminated/);
+  });
+
   it("parses column names when schema has CHECK constraints and CONSTRAINT clauses", () => {
     const data = makeDb((db) => {
       db.exec(`
