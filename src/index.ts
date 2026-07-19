@@ -161,12 +161,17 @@ function traverseTable(
     // Leaf table page
     const ptrBase = base + hdr + 8;
     for (let i = 0; i < numCells; i++) {
-      let pos = base + u16(db, ptrBase + i * 2);
-      const [payloadLen, ps] = varint(db, pos);
-      pos += ps;
-      const [, rs] = varint(db, pos);
-      pos += rs; // skip rowid
-      rows.push(decodeRecord(db.subarray(pos, pos + payloadLen)));
+      try {
+        let pos = base + u16(db, ptrBase + i * 2);
+        const [payloadLen, ps] = varint(db, pos);
+        pos += ps;
+        const [, rs] = varint(db, pos);
+        pos += rs; // skip rowid
+        rows.push(decodeRecord(db.subarray(pos, pos + payloadLen)));
+      } catch {
+        // A single corrupted/truncated row shouldn't take down the whole
+        // table scan — skip it and keep whatever other rows are still valid.
+      }
     }
   }
 
