@@ -1,0 +1,8 @@
+[
+  "core",
+  "build",
+  "test",
+  "docs",
+  "deps",
+  "ci"
+]
