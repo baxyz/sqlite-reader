@@ -40,3 +40,13 @@ pnpm test             # vitest run --coverage
 
 No `README.md` exists yet — worth adding before the next npm-facing change, but out of scope for
 this AGENTS.md pass.
+
+## Releasing
+
+Run *Actions → Release → Run workflow* on `main` (tick `dry-run` first if in doubt):
+[helpers4/action-release](https://github.com/helpers4/action-release) computes the version from the
+Conventional Commits, writes it in `package.json` and `jsr.json`, adds the section to `CHANGELOG.md`
+(a summary under `## [Unreleased]` leads it), pushes the signed release commit to `main`, tags it
+and publishes to npm (`dist/`, `publishConfig.directory`) and JSR (`src/`) with trusted publishing.
+Never bump `version` or push a `v*` tag by hand; `release.yml` must keep its file name (the trusted
+publishers check it). If a registry step fails after the tag exists, *Re-run failed jobs*.
