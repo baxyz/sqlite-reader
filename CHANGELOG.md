@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-01
+
+### Documentation
+
+- **agents**: 📝 add AGENTS.md, CLAUDE.md, and scopes.json
+
 ## [0.3.0] - 2026-07-19
 
 ### Added
@@ -91,7 +97,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`readTable(db, tableName)`) that walks leaf and interior B-tree pages and
   decodes rows into plain objects.
 
-[Unreleased]: https://github.com/baxyz/sqlite-reader/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/baxyz/sqlite-reader/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/baxyz/sqlite-reader/compare/v0.3.0...v0.3.1
 [0.2.1]: https://github.com/baxyz/sqlite-reader/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/baxyz/sqlite-reader/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/baxyz/sqlite-reader/releases/tag/v0.1.0
